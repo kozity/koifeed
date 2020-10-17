@@ -1,4 +1,3 @@
-// TODO: list() for all feeds is missing first entry for index 0
 // TODO: implement an ErrorKind struct for better error handling
 use reqwest::blocking::Client;
 use std::env;
@@ -205,7 +204,7 @@ impl Config {
                 }
                 parser_advance(&mut parser, vec!("published", "date", "pubDate"), 1, None);
                 match &parser.next() {
-                    Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => date = Some(string.clone()),
+                    Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => date = Some(date_parse(string)),
                     Ok(XmlEvent::EndDocument) => break,
                     Err(e) => {
                         eprintln!("Error: {}", e);
@@ -259,10 +258,11 @@ impl Config {
 
     // TODO: one day, consider making this async
     pub fn update(&self) -> Result<(), std::io::Error> {
-        let file = File::open(&self.opml)?;
-        let file = BufReader::new(file);
-
-        let parser = EventReader::new(file);
+        let parser = EventReader::new(
+            BufReader::new(
+                File::open(&self.opml)?
+            )
+        );
         let mut index = 0;
         for e in parser {
             match e {
