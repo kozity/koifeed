@@ -16,17 +16,18 @@ Some Rust from someone who didn't know much Rust before writing this.
 
 ## Usage
 ### Setup
-Installing with cargo is easiest. As I have it set up on my system, feeds are stored directly in an OPML file (see opml.xml). The program reads this file to update individual feed files named by title. These feed files don't carry a ".xml" extension, but they probably should. There is currently no way to manage feeds other than editing the OPML file directly. There are no plans to add one. Filepaths are currently hard-coded, which is probably not what you want. Open an issue if you want me to fix this.
+Installing with cargo is easiest. As I have it set up on my system, feeds are stored directly in an OPML file. The program reads this file to update individual feed files named by title. There is currently no way to manage feeds other than editing the OPML file directly. There are no plans to add one. Filepaths are currently hard-coded, which is probably not what you want. Open an issue if you want me to fix this.
 
 ### Commands
 Replace occurrences of "#" with indices of desired feeds or entries. There is currently no support for accessing feeds or entries by title.
 Command | Effect
 --------|-------
-`reader update` | Update all feed files. Displays indices, feed titles, and completion status as individual feeds are updated. This is the only function that requires an internet connection.
-`reader list` | List index, date of most recent update, and title for each feed. Indexing starts at 0 and is done automatically.
-`reader list #` | List index, date of most recent update, and title for each entry in the given feed.
-`reader content # #` | Print the main content of the given entry (second #) in the given feed (first #). May contain raw HTML (see "Examples").
-`reader link # #` | Print the main link given for the given entry in the given feed. Not all entries contain links.
+`rsst update` | Update all feed files. Displays indices, feed titles, and completion status as individual feeds are updated. This is the only function that requires an internet connection.
+`rsst list` | List index, date of most recent update, and title for each feed. Indexing starts at 0 and is done automatically.
+`rsst list #` | List index, date of most recent update, and title for each entry in the given feed.
+`rsst content # #` | Print the main content of the given entry (second #) in the given feed (first #). May contain raw HTML (see "Examples").
+`rsst link #` | Print the main link given for the given feed, often to a homepage.
+`rsst link # #` | Print the main link given for the given entry in the given feed. Not all entries contain links.
 
 Example | Effect
 --------|-------
