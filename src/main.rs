@@ -1,4 +1,4 @@
-fn main() -> Result<(), std::io::Error> {
+fn main() -> Result<(), rsst::Error> {
     let config = rsst::Config::new(
         String::from("/home/ty/.config/rss/opml.xml"), //opml
         String::from("/home/ty/.config/rss/"), //save_dir

@@ -1,4 +1,3 @@
-// TODO: implement an ErrorKind struct for better error handling
 use reqwest::blocking::Client;
 use std::env;
 use std::fs::{self, File};
@@ -15,7 +14,7 @@ pub struct Config {
     pub index_entry: Option<u8>,
 }
 impl Config {
-    //TODO: validate indices
+    //TODO: validate indices?
     pub fn new(opml: String, save_dir: String) -> Self {
         let mut args = env::args();
         let invocation = args.next();
@@ -63,31 +62,23 @@ impl Config {
         }
     }
 
-    pub fn content(&self) -> Result<(), std::io::Error> {
-        if let None = self.index_entry {
-            eprintln!("Error: no entry index argument found.");
-            return Ok(());
+    pub fn content(&self) -> Result<(), Error> {
+        if let None = self.index_feed {
+            return Err(Error::IndexAbsent);
         }
-        let mut parser = EventReader::new(
-            BufReader::new(
-                File::open(&self.opml)?
-            )
-        );
+        if let None = self.index_entry {
+            return Err(Error::IndexAbsent);
+        }
+        let mut parser = parser_new(&self.opml)?;
         let mut title = String::new();
-        if let Some(string) = parser_advance(&mut parser, vec!("outline"), self.index_feed.unwrap() + 1, Some("title")) {
+        if let Some(string) = parser_advance(&mut parser, vec!("outline"), self.index_feed.unwrap() + 1, Some("title"))? {
             title = string;
         } else {
             println!("Error: feed not found.");
         }
-        let mut parser = EventReader::new(
-            BufReader::new(
-                File::open(
-                    format!("{}{}", self.save_dir, title)
-                )?
-            )
-        );
-        parser_advance(&mut parser, vec!("entry", "item"), self.index_feed.unwrap() + 1, None);
-        parser_advance(&mut parser, vec!("content", "description"), 1, None);
+        let mut parser = parser_new(&format!("{}{}", self.save_dir, title))?;
+        parser_advance(&mut parser, vec!("entry", "item"), self.index_entry.unwrap() + 1, None)?;
+        parser_advance(&mut parser, vec!("content", "description"), 1, None)?;
         match &parser.next() {
             Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) =>
                 println!("{}", string),
@@ -96,17 +87,11 @@ impl Config {
         Ok(())
     } // content()
 
-    fn date_get_feed(&self, feed_name: &str) -> Result<String, std::io::Error> {
+    fn date_get_feed(&self, feed_name: &str) -> Result<String, Error> {
+        let mut parser = parser_new(&format!("{}{}", self.save_dir, feed_name))?;
         let mut date = String::new();
-        let mut parser = EventReader::new(
-            BufReader::new(
-                File::open(
-                    format!("{}{}", self.save_dir, feed_name)
-                )?
-            )
-        );
-        parser_advance(&mut parser, vec!("entry", "item"), 1, None);
-        parser_advance(&mut parser, vec!("published", "date", "pubDate"), 1, None);
+        parser_advance(&mut parser, vec!("entry", "item"), 1, None)?;
+        parser_advance(&mut parser, vec!("published", "date", "pubDate"), 1, None)?;
         match &parser.next() {
             Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => date = String::from(string),
             _ => eprintln!("Error: date not found."),
@@ -114,40 +99,30 @@ impl Config {
         Ok(date_parse(&date))
     } // date_get_feed()
 
-    pub fn link(&self) -> Result<(), std::io::Error> {
+    pub fn link(&self) -> Result<(), Error> {
         if let None = self.index_feed {
             println!("Error: no index argument(s) found.");
             return Ok(());
         }
-        let mut parser = EventReader::new(
-            BufReader::new(
-                File::open(&self.opml)?
-            )
-        );
+        let mut parser = parser_new(&self.opml)?;
         let mut title = String::new();
         if let None = self.index_entry {
-            if let Some(string) = parser_advance(&mut parser, vec!("outline"), self.index_feed.unwrap() + 1, Some("htmlUrl")) {
+            if let Some(string) = parser_advance(&mut parser, vec!("outline"), self.index_feed.unwrap() + 1, Some("htmlUrl"))? {
                 println!("{}", string);
             } else {
                 println!("Error: link not found.");
             }
             return Ok(());
         } else {
-            if let Some(string) = parser_advance(&mut parser, vec!("outline"), self.index_feed.unwrap() + 1, Some("title")) {
+            if let Some(string) = parser_advance(&mut parser, vec!("outline"), self.index_feed.unwrap() + 1, Some("title"))? {
                 title = string;
             } else {
                 println!("Error: feed not found.");
             }
         }
-        let mut parser = EventReader::new(
-            BufReader::new(
-                File::open(
-                    format!("{}{}", self.save_dir, title)
-                )?
-            )
-        );
-        parser_advance(&mut parser, vec!("entry", "item"), self.index_entry.unwrap() + 1, None);
-        if let Some(string) = parser_advance(&mut parser, vec!("link"), 1, Some("href")) {
+        let mut parser = parser_new(&format!("{}{}", self.save_dir, title))?;
+        parser_advance(&mut parser, vec!("entry", "item"), self.index_entry.unwrap() + 1, None)?;
+        if let Some(string) = parser_advance(&mut parser, vec!("link"), 1, Some("href"))? {
             println!("{}", string);
         } else {
             match &parser.next() {
@@ -162,25 +137,14 @@ impl Config {
         Ok(())
     }
 
-    // TODO: this is real slow right now for some feeds
-    pub fn list(&self) -> Result<(), std::io::Error> {
+    pub fn list(&self) -> Result<(), Error> {
         if let Some(index_feed) = self.index_feed { // list from individual feed
-            let mut parser = EventReader::new(
-                BufReader::new(
-                    File::open(&self.opml)?
-                )
-            );
+            let mut parser = parser_new(&self.opml)?;
             let mut title = String::new();
-            if let Some(string) = parser_advance(&mut parser, vec!("outline"), index_feed + 1, Some("title")) {
+            if let Some(string) = parser_advance(&mut parser, vec!("outline"), index_feed + 1, Some("title"))? {
                 title = string;
             }
-            let mut parser = EventReader::new(
-                BufReader::new(
-                    File::open(
-                        format!("{}{}", self.save_dir, title)
-                    )?
-                )
-            );
+            let mut parser = parser_new(&format!("{}{}", self.save_dir, title))?;
 
             println!("({}) {}", index_feed, title);
             println!("Entry\tDate\tTitle");
@@ -190,9 +154,9 @@ impl Config {
             let mut index = 0;
 
             // skip header content until entries
-            parser_advance(&mut parser, vec!("entry", "item"), 1, None);
             loop {
-                parser_advance(&mut parser, vec!("title"), 1, None);
+                parser_advance(&mut parser, vec!("entry", "item"), 1, None)?;
+                parser_advance(&mut parser, vec!("title"), 1, None)?;
                 match &parser.next() {
                     Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => title = Some(string.clone()),
                     Ok(XmlEvent::EndDocument) => break,
@@ -202,7 +166,7 @@ impl Config {
                     }
                     _ => {}
                 }
-                parser_advance(&mut parser, vec!("published", "date", "pubDate"), 1, None);
+                parser_advance(&mut parser, vec!("published", "date", "pubDate"), 1, None)?;
                 match &parser.next() {
                     Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => date = Some(date_parse(string)),
                     Ok(XmlEvent::EndDocument) => break,
@@ -220,19 +184,19 @@ impl Config {
                 }
             }
         } else { // list all feeds
-            let mut parser = EventReader::new(
-                BufReader::new(
-                    File::open(&self.opml)?
-                )
-            );
+            let mut parser = parser_new(&self.opml)?;
             let mut index = 0;
             println!("Feed\tUpdated\tTitle");
             loop {
                 let title;
-                if let Some(string) = parser_advance(&mut parser, vec!("outline"), 1, Some("title")) {
-                    title = string;
-                } else {
-                    break;
+                match parser_advance(&mut parser, vec!("outline"), 1, Some("title")) {
+                    Ok(Some(string)) => title = string,
+                    Err(Error::Xml(_)) => {
+                        eprintln!("\t Error listing feed ({})", index);
+                        index += 1;
+                        continue;
+                    }
+                    _ => break,
                 }
                 println!("{}\t{}\t{}", index, self.date_get_feed(&title)?, title);
                 index += 1;
@@ -243,26 +207,34 @@ impl Config {
 
     pub fn print_usage(&self) {
         if let Some(invocation) = &self.invocation {
-            eprintln!("Usage: {} [ contents | link | list | update ]", invocation)
+            eprintln!("Usage: {} [contents | link | list | update] [feed index] [entry index]", invocation)
         } else {
-            eprintln!("Usage: rsst [ contents | link | list | update ]");
+            eprintln!("Usage: rsst [contents | link | list | update] [feed index] [entry index]");
         }
     }
 
-    fn save_feed(&self, title: &str, url: &str) -> Result<(), std::io::Error> {
-        let body = self.client.as_ref().unwrap().get(url).send().expect("HTTP error").text().unwrap();
+    fn save_feed(&self, title: &str, url: &str) -> Result<(), Error> {
+        let client = match self.client.as_ref() {
+            Some(client) => client,
+            None => return Err(Error::ClientAbsent),
+        };
+        let body = match client.get(url).send() {
+            Ok(response) => match response.text() {
+                Ok(string) => string,
+                Err(_) => return Err(Error::ClientRequestEmpty),
+            },
+            Err(_) => return Err(Error::ClientRequestFail),
+        };
         let path = format!("{}{}", self.save_dir, title);
-        fs::write(path, body)?;
-        Ok(())
+        match fs::write(path, body) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(Error::Io(e)),
+        }
     }
 
     // TODO: one day, consider making this async
-    pub fn update(&self) -> Result<(), std::io::Error> {
-        let parser = EventReader::new(
-            BufReader::new(
-                File::open(&self.opml)?
-            )
-        );
+    pub fn update(&self) -> Result<(), Error> {
+        let parser = parser_new(&self.opml)?;
         let mut index = 0;
         for e in parser {
             match e {
@@ -270,7 +242,6 @@ impl Config {
                     if name.local_name != String::from("outline") {
                         continue;
                     }
-                    index += 1;
                     let mut title = String::new();
                     let mut xml_url = String::new();
                     for attribute in attributes {
@@ -281,12 +252,12 @@ impl Config {
                         }
                     }
                     println!("Updating ({}) {}", index, title);
-                    self.save_feed(&title, &xml_url)?;
+                    if let Err(Error::ClientRequestFail) = self.save_feed(&title, &xml_url) {
+                        eprintln!("\tFailed updating {}", title);
+                    }
+                    index += 1;
                 }
-                Err(e) => {
-                    println!("Error: {}", e);
-                    break;
-                }
+                Err(e) => return Err(Error::Xml(e)),
                 _ => {}
             }
         }
@@ -294,6 +265,18 @@ impl Config {
     } // update()
 
 } // impl Config
+
+#[derive(Debug)]
+pub enum Error {
+    ClientAbsent,
+    ClientRequestEmpty,
+    ClientRequestFail,
+    IndexAbsent,
+    Io(std::io::Error),
+    ParserTagAbsent,
+    ParserAttributeAbsent,
+    Xml(xml::reader::Error),
+}
 
 fn date_parse(date: &str) -> String {
     if date.contains(",") { // parse month-day from RFC 822
@@ -331,7 +314,7 @@ fn date_parse(date: &str) -> String {
     }
 } // date_parse()
 
-fn parser_advance(parser: &mut EventReader<BufReader<File>>, tags: Vec<&str>, count: u8, attr: Option<&str>) -> Option<String> {
+fn parser_advance(parser: &mut EventReader<BufReader<File>>, tags: Vec<&str>, count: u8, attr: Option<&str>) -> Result<Option<String>, Error> {
     let mut count_current = 0;
     loop {
         match parser.next() {
@@ -342,7 +325,7 @@ fn parser_advance(parser: &mut EventReader<BufReader<File>>, tags: Vec<&str>, co
                         if let Some(string) = attr {
                             for attribute in attributes {
                                 if &attribute.name.local_name == string {
-                                    return Some(attribute.value.clone());
+                                    return Ok(Some(attribute.value.clone()));
                                 }
                             }
                         }
@@ -350,15 +333,21 @@ fn parser_advance(parser: &mut EventReader<BufReader<File>>, tags: Vec<&str>, co
                     }
                 }
             }
-            Ok(XmlEvent::EndDocument) => {
-                break;
-            },
-            Err(e) => {
-                eprintln!("Error: {}", e);
-                break;
-            }
+            Ok(XmlEvent::EndDocument) => break,
+            Err(e) => return Err(Error::Xml(e)),
             _ => {}
         }
     }
-    None
+    Ok(None)
 } // parser_advance()
+
+fn parser_new(path: &str) -> Result<EventReader<BufReader<File>>, Error> {
+    Ok(EventReader::new(
+        BufReader::new(
+            match File::open(path) {
+                Ok(file) => file,
+                Err(e) => return Err(Error::Io(e)),
+            }
+        )
+    ))
+}
