@@ -32,5 +32,5 @@ Command | Effect
 Example | Effect
 --------|-------
 `rsst list \| grep 01-01` | Print a list of all feeds that were published/last updated on January 1st.
-`rsst content 1 1 \| w3m -T text/html` | Assuming the second newest article in the second feed contains raw HTML, page through the properly displayed HTML using w3m.
+`rsst content 1 1 \| w3m -T text/html` | Assuming the second article in the second feed contains raw HTML, page through the properly displayed HTML using w3m.
 `` mpv `rsst link 11 0` `` | Use mpv with youtube-dl to play the latest video from the youtube-generated feed with index 11.
