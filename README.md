@@ -16,7 +16,7 @@ Some Rust from someone who didn't know much Rust before writing this.
 
 ## Usage
 ### Setup
-Installing with cargo is easiest. As I have it set up on my system, feeds are stored directly in an OPML file. The program reads this file to update individual feed files named by title. There is currently no way to manage feeds other than editing the OPML file directly. There are no plans to add one. Filepaths are currently hard-coded, which is probably not what you want. Open an issue if you want me to fix this.
+It is easiest to clone this repository and run a `cargo install --path .`. As I have it set up on my system, feeds are stored directly in an OPML file. The program reads this file to update individual feed files named by title. There is currently no way to manage feeds other than editing the OPML file directly. There are no plans to add one. Filepaths are currently hard-coded, which is probably not what you want. Open an issue if you want me to fix this.
 
 ### Commands
 Replace occurrences of "#" with indices of desired feeds or entries. There is currently no support for accessing feeds or entries by title.
