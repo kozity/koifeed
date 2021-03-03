@@ -125,7 +125,7 @@ impl Config {
         match &parser.next() {
             Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) =>
                 println!("{}", string),
-            _ => eprintln!("Error: contents not found."),
+            _ => eprintln!("Error: content not found."),
         }
         Ok(())
     } // content()
@@ -289,9 +289,9 @@ impl Config {
     // TODO: find out if there's a standard syntax for these
     pub fn print_usage(&self) {
         if let Some(invocation) = &self.invocation {
-            eprintln!("Usage: {} [contents | link | list | update] [feed index] [entry index]", invocation)
+            eprintln!("Usage: {} [content | link | list | update] [feed index] [entry index]", invocation)
         } else {
-            eprintln!("Usage: rsst [contents | link | list | update] [feed index] [entry index]");
+            eprintln!("Usage: rsst [content | link | list | update] [feed index] [entry index]");
         }
     } // print_usage()
 
