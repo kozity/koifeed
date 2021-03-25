@@ -161,7 +161,13 @@ fn link_entry(feed_title: &str, entry_index: usize) -> Result<(), Error> {
                     }
                 }
             },
-            Ok(XmlEvent::EndDocument) => return Err(Error::XmlUnexpectedEOF),
+            Ok(XmlEvent::EndDocument) => {
+                if link.is_empty() {
+                    return Err(Error::XmlUnexpectedEOF);
+                } else {
+                    break;
+                }
+            },
             Err(e) => return Err(Error::from(e)),
             _ => {},
         }
