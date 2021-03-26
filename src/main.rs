@@ -37,7 +37,7 @@ const KEYS_DATE:    &[&str] = &["published", "date", "pubDate"];
 const KEYS_ENTRY:   &[&str] = &["entry", "item"];
 const KEYS_OUTLINE: &[&str] = &["outline"];
 const PATH_CACHE:   &str    = "/home/ty/.local/share/rss";
-const PATH_OPML:    &str    = "/home/ty/storage/opml.xml";
+const PATH_OPML:    &str    = "/home/ty/.config/feeds.opml";
 
 fn main() -> Result<(), Error> {
     let mut args = std::env::args();
@@ -228,7 +228,6 @@ fn list_all() -> Result<(), Error> {
     Ok(())
 }
 
-// TODO: figure out whether this looping logic always results in an error. This will be the case if xml-rs only returns EndDocument once.
 // The current logic of this function is subject to assumed ordering of title and date elements.
 fn list_feed(feed_title: &str) -> Result<(), Error> {
     let mut index = 0;
@@ -254,7 +253,7 @@ fn list_feed(feed_title: &str) -> Result<(), Error> {
             Err(e) => return Err(Error::from(e)),
             _ => String::from(""),
         };
-        print!("{}\t{}\t{}\n", index, entry_date, entry_title);
+        print!("{}\t{}\t{}\n", index, entry_date, entry_title.trim_end());
         index += 1;
     }
     Ok(())
