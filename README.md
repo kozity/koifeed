@@ -19,7 +19,7 @@ I love the terminal for several reasons: how applications can easily interact, h
 ## Usage
 
 ### Setup
-From source only at the moment. Feeds are stored directly in an OPML file. The program reads this file to update individual feed files named by title. There is currently no way to manage feeds other than editing the OPML file directly. There are no plans to add any. Filepaths are currently hard-coded for my (~ty) single-user home system, which is probably not what you want.
+From source only at the moment. Feeds are stored directly in an OPML file. The program reads this file to update individual feed files named by title. There is currently no way to manage feeds other than editing the OPML file directly. There are no plans to add any. `rsst` requires that this file be located at `$HOME/.config/feeds.opml`; it stores feeds at `$HOME/.local/share/rss`.
 
 ### Commands
 Replace occurrences of "#" with the index of the desired entry. Feeds are specified by a key that will match its first superstring.
