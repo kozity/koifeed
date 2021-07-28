@@ -8,6 +8,8 @@ const KEYS_CONTENT: &[&str] = &["content", "description"];
 const KEYS_DATE:    &[&str] = &["published", "date", "pubDate"];
 const KEYS_ENTRY:   &[&str] = &["entry", "item"];
 const KEYS_OUTLINE: &[&str] = &["outline"];
+const TAG_PREFIX:   &str    = ":";
+const TAG_PREFIX_LEN: usize = TAG_PREFIX.len();
 
 pub struct Config {
     pub entry_index: Option<usize>,
@@ -30,7 +32,11 @@ impl Config {
         let invocation = args.next().expect("absent invocation argument");
         let subcommand = args.next();
         let feed_title = match args.next() {
-            Some(key) => Some(Self::feed_title_by_key(&key, &path_opml)?),
+            Some(key) => if key.starts_with(TAG_PREFIX) {
+                Some(key)
+            } else {
+                Some(Self::feed_title_by_key(&key, &path_opml)?)
+            },
             None => None,
         };
         let entry_index = match args.next() {
@@ -68,7 +74,7 @@ impl Config {
     fn feed_title_by_key(feed_key: &str, path_opml: &str) -> Result<String, Error> {
         let mut parser = parser_init(path_opml)?;
         loop {
-            let title = match parser_advance(&mut parser, KEYS_OUTLINE, 1, Some("title")) {
+            let title = match parser_advance(&mut parser, KEYS_OUTLINE, 1, Some("text")) {
                 Ok(string) => string,
                 Err(Error::XmlUnexpectedEOF) => break,
                 Err(e) => return Err(e),
@@ -131,7 +137,7 @@ impl Config {
             match parser.next() {
                 Ok(XmlEvent::StartElement { name, attributes, .. }) => {
                     if name.local_name == "outline" {
-                        match attributes.iter().find(|attribute| attribute.name.local_name == "title") {
+                        match attributes.iter().find(|attribute| attribute.name.local_name == "text") {
                             Some(attr) => {
                                 if &attr.value == self.feed_title.as_ref().unwrap() {
                                     match attributes.iter().find(|attribute| attribute.name.local_name == "htmlUrl") {
@@ -159,7 +165,7 @@ impl Config {
         let mut parser = parser_init(&self.path_opml)?;
         println!("DATE\tTITLE");
         loop {
-            let title = match parser_advance(&mut parser, KEYS_OUTLINE, 1, Some("title")) {
+            let title = match parser_advance(&mut parser, KEYS_OUTLINE, 1, Some("text")) {
                 Ok(string) => string,
                 Err(Error::XmlUnexpectedEOF) => break,
                 Err(e) => return Err(Error::from(e)),
@@ -209,6 +215,53 @@ impl Config {
         Ok(())
     }
 
+    pub fn list_tags(&self) -> Result<(), Error> {
+        let feed_title_arg = self.feed_title.as_ref().unwrap();
+        let tag_list: Vec<String> = feed_title_arg[TAG_PREFIX_LEN..]
+            .split(',')
+            .map(|slice| String::from(slice))
+            .collect();
+        let parser = parser_init(&self.path_opml)?;
+
+        for e in parser {
+            match e {
+                Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                    if &name.local_name != "outline" { continue; }
+                    let mut title = String::new();
+                    let mut category_list: Vec<String> = Vec::new();
+                    // get both category and title attributes
+                    for attribute in attributes {
+                        if "category" == &attribute.name.local_name[..] {
+                            category_list = attribute
+                                .value
+                                .clone()
+                                .split(',')
+                                .map(|slice| String::from(slice))
+                                .collect();
+                        } else if "text" == &attribute.name.local_name[..] {
+                            title = attribute.value.clone();
+                        }
+                    }
+                    let is_match = tag_list.iter().all(|tag| category_list.contains(tag));
+                    if is_match {
+                        Config {
+                            entry_index: None,          /* list_feed() doesn't use this field */
+                            feed_title:  Some(title),
+                            invocation:  self.invocation.clone(),
+                            path_cache:  self.path_cache.clone(),
+                            path_opml:   String::new(), /* list_feed() doesn't use this field */
+                            subcommand:  None,          /* list_feed() doesn't use this field */
+                        }.list_feed()?;
+                    }
+                }
+                Err(e) => return Err(Error::from(e)),
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
     // Arguments are error-checked here; unwrap() may be used within these constituent functions.
     pub fn run(&self) -> Result<(), Error> {
         match self.subcommand.as_deref() {
@@ -222,7 +275,11 @@ impl Config {
                 _ => Err(Error::ArgsNoFeed),
             },
             Some("list") => match &self.feed_title {
-                Some(_) => self.list_feed(),
+                Some(string) => if string.starts_with(TAG_PREFIX) {
+                    self.list_tags()
+                } else {
+                    self.list_feed()
+                },
                 None => self.list_all(),
             },
             Some("update") => self.update(),
@@ -243,7 +300,7 @@ impl Config {
                     for attribute in attributes {
                         if "xmlUrl" == &attribute.name.local_name[..] {
                             xml_url = attribute.value.clone();
-                        } else if "title" == &attribute.name.local_name[..] {
+                        } else if "text" == &attribute.name.local_name[..] {
                             title = attribute.value.clone();
                         }
                     }
