@@ -1,358 +1,307 @@
-use reqwest::blocking::Client;
-use std::env;
-use std::fs::{self, File};
-use std::io::{self, BufReader};
-use xml::reader::{EventReader, XmlEvent};
+#![warn(missing_docs)]
 
-const KEYS_CONTENT: &[&str] = &["content", "description"];
-const KEYS_DATE:    &[&str] = &["published", "date", "pubDate"];
-const KEYS_ENTRY:   &[&str] = &["entry", "item"];
-const KEYS_OUTLINE: &[&str] = &["outline"];
-const TAG_PREFIX:   &str    = ":";
-const TAG_PREFIX_LEN: usize = TAG_PREFIX.len();
+//! This crate provides two simple newtypes over `String`s as well as a few convenience functions
+//! to ease the manipulation of newsfeeds in RSS 2.0 or Atom format.
 
-pub struct Config {
-    pub entry_index: Option<usize>,
-    pub feed_title:  Option<String>,
-    pub invocation:  String,
-    pub path_cache:  String,
-    pub path_opml:   String,
-    pub subcommand:  Option<String>,
-}
+use xml::reader::{Error, EventReader, XmlEvent};
 
-impl Config {
-    pub fn init() -> Result<Self, Error> {
-        let path_home = match env::var("HOME") {
-            Ok(string) => string,
-            Err(_) => return Err(Error::EnvNoHome),
-        };
-        let path_cache = format!("{}/.local/share/rss", path_home);
-        let path_opml = format!("{}/.config/feeds.opml", path_home);
-        let mut args = env::args();
-        let invocation = args.next().expect("absent invocation argument");
-        let subcommand = args.next();
-        let feed_title = match args.next() {
-            Some(key) => if key.starts_with(TAG_PREFIX) {
-                Some(key)
-            } else {
-                Some(Self::feed_title_by_key(&key, &path_opml)?)
-            },
-            None => None,
-        };
-        let entry_index = match args.next() {
-            Some(string) => match string.parse::<usize>() {
-                Ok(num) => Some(num),
-                Err(_) => None,
-            },
-            None => None,
-        };
-        Ok(Self {
-            entry_index,
-            feed_title,
-            invocation,
-            path_cache,
-            path_opml,
-            subcommand,
-        })
-    }
+const KEYS_CONTENT: [&str; 2] = ["content", "description"];
+const KEYS_DATE:    [&str; 4] = ["published", "updated", "pubDate", "date"];
+const KEYS_ENTRY:   [&str; 2] = ["entry", "item"];
+const KEYS_TITLE:   [&str; 1] = ["title"];
 
-    pub fn content(&self) -> Result<(), Error> {
-        let entry_index = self.entry_index.unwrap();
-        let feed_title = self.feed_title.as_ref().unwrap();
-        let mut parser = parser_init(&format!("{}/{}", self.path_cache, feed_title))?;
-        parser_advance(&mut parser, KEYS_ENTRY, entry_index + 1, None)?;
-        parser_advance(&mut parser, KEYS_CONTENT, 1, None)?;
-        match parser.next() {
-            Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => {
-                println!("{}", string);
-                Ok(())
-            },
-            _ => Err(Error::BadContent),
-        }
-    }
+/// A newtype struct to help manipulation of an OPML 2.0 subscription list.
+pub struct Opml(String);
 
-    fn feed_title_by_key(feed_key: &str, path_opml: &str) -> Result<String, Error> {
-        let mut parser = parser_init(path_opml)?;
-        loop {
-            let title = match parser_advance(&mut parser, KEYS_OUTLINE, 1, Some("text")) {
-                Ok(string) => string,
-                Err(Error::XmlUnexpectedEOF) => break,
-                Err(e) => return Err(e),
-            };
-            if title.contains(feed_key) { return Ok(title); }
-        }
-        Err(Error::KeyNoMatch)
-    }
-
-    pub fn link_entry(&self) -> Result<(), Error> {
-        let entry_index = self.entry_index.unwrap();
-        let feed_title = self.feed_title.as_ref().unwrap();
-        let mut parser = parser_init(&format!("{}/{}", self.path_cache, feed_title))?;
-        parser_advance(&mut parser, KEYS_ENTRY, entry_index + 1, None)?;
-        let mut link = String::new();
-        loop {
-            match parser.next() {
-                Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                    if &name.local_name == "enclosure" {
-                        match attributes.iter().find(|attribute| attribute.name.local_name == "url") {
-                            Some(attr) => {
-                                link = attr.value.clone();
-                                break;
-                            },
-                            None => return Err(Error::BadEnclosure),
-                        }
-                    } else if &name.local_name == "link" {
-                        if link.is_empty() {
-                            link = match attributes.iter().find(|attribute| attribute.name.local_name == "href") {
-                                Some(attr) => attr.value.clone(),
-                                None => match parser.next() {
-                                    Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => string,
-                                    Err(e) => return Err(Error::from(e)),
-                                    _ => continue,
-                                },
-                            };
-                        } else {
-                            break;
-                        }
-                    }
-                },
-                Ok(XmlEvent::EndDocument) => {
-                    if link.is_empty() {
-                        return Err(Error::XmlUnexpectedEOF);
-                    } else {
-                        break;
-                    }
-                },
-                Err(e) => return Err(Error::from(e)),
-                _ => {},
-            }
-        }
-        println!("{}", link);
-        Ok(())
-    }
-
-    pub fn link_feed(&self) -> Result<(), Error> {
-        let mut parser = parser_init(&self.path_opml)?;
-        loop {
-            match parser.next() {
-                Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                    if name.local_name == "outline" {
-                        match attributes.iter().find(|attribute| attribute.name.local_name == "text") {
-                            Some(attr) => {
-                                if &attr.value == self.feed_title.as_ref().unwrap() {
-                                    match attributes.iter().find(|attribute| attribute.name.local_name == "htmlUrl") {
-                                        Some(attr) => {
-                                            println!("{}", attr.value);
-                                            break;
-                                        },
-                                        None => return Err(Error::ParserAttributeAbsent),
-                                    }
-                                }
-                            },
-                            None => return Err(Error::KeyNoMatch),
-                        }
-                    }
-                },
-                Ok(XmlEvent::EndDocument) => return Err(Error::XmlUnexpectedEOF),
-                Err(e) => return Err(Error::from(e)),
-                _ => {},
-            }
-        }
-        Ok(())
-    }
-
-    pub fn list_all(&self) -> Result<(), Error> {
-        let mut parser = parser_init(&self.path_opml)?;
-        println!("DATE\tTITLE");
-        loop {
-            let title = match parser_advance(&mut parser, KEYS_OUTLINE, 1, Some("text")) {
-                Ok(string) => string,
-                Err(Error::XmlUnexpectedEOF) => break,
-                Err(e) => return Err(Error::from(e)),
-            };
-            // Using the title, retrieve the date from the feed file.
-            let mut feed_parser = parser_init(&format!("{}/{}", self.path_cache, title))?;
-            parser_advance(&mut feed_parser, KEYS_ENTRY, 1, None)?;
-            parser_advance(&mut feed_parser, KEYS_DATE, 1, None)?;
-            let date = match feed_parser.next() {
-                Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => date_parse(&string),
-                _ => return Err(Error::ParserDateAbsent),
-            };
-            println!("{}\t{}", date, title);
-        }
-        Ok(())
-    }
-
-    // The current logic of this function is subject to assumed ordering of title and date elements.
-    pub fn list_feed(&self) -> Result<(), Error> {
-        let feed_title = self.feed_title.as_ref().unwrap();
-        let mut index = 0;
-        let mut parser = parser_init(&format!("{}/{}", self.path_cache, feed_title))?;
-        print!("FEED:\t{}\nINDEX\tDATE\tTITLE\n", feed_title);
-        loop {
-            match parser_advance(&mut parser, KEYS_ENTRY, 1, None) {
-                Err(Error::XmlUnexpectedEOF) => break,
-                Err(e) => return Err(e),
-                _ => {},
-            }
-            parser_advance(&mut parser, &["title"], 1, None)?;
-            let entry_title = match parser.next() {
-                Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => string,
-                Ok(XmlEvent::EndDocument) => break,
-                Err(e) => return Err(Error::from(e)),
-                _ => String::from(""),
-            };
-            parser_advance(&mut parser, KEYS_DATE, 1, None)?;
-            let entry_date = match parser.next() {
-                Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => date_parse(&string),
-                Ok(XmlEvent::EndDocument) => break,
-                Err(e) => return Err(Error::from(e)),
-                _ => String::from(""),
-            };
-            print!("{}\t{}\t{}\n", index, entry_date, entry_title.trim_end());
-            index += 1;
-        }
-        Ok(())
-    }
-
-    pub fn list_tags(&self) -> Result<(), Error> {
-        let feed_title_arg = self.feed_title.as_ref().unwrap();
-        let tag_list: Vec<String> = feed_title_arg[TAG_PREFIX_LEN..]
-            .split(',')
-            .map(|slice| String::from(slice))
-            .collect();
-        let parser = parser_init(&self.path_opml)?;
-
-        for e in parser {
-            match e {
-                Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                    if &name.local_name != "outline" { continue; }
-                    let mut title = String::new();
-                    let mut category_list: Vec<String> = Vec::new();
-                    // get both category and title attributes
-                    for attribute in attributes {
-                        if "category" == &attribute.name.local_name[..] {
-                            category_list = attribute
-                                .value
-                                .clone()
-                                .split(',')
-                                .map(|slice| String::from(slice))
-                                .collect();
-                        } else if "text" == &attribute.name.local_name[..] {
-                            title = attribute.value.clone();
-                        }
-                    }
-                    let is_match = tag_list.iter().all(|tag| category_list.contains(tag));
-                    if is_match {
-                        Config {
-                            entry_index: None,          /* list_feed() doesn't use this field */
-                            feed_title:  Some(title),
-                            invocation:  self.invocation.clone(),
-                            path_cache:  self.path_cache.clone(),
-                            path_opml:   String::new(), /* list_feed() doesn't use this field */
-                            subcommand:  None,          /* list_feed() doesn't use this field */
-                        }.list_feed()?;
-                    }
-                }
-                Err(e) => return Err(Error::from(e)),
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-
-    // Arguments are error-checked here; unwrap() may be used within these constituent functions.
-    pub fn run(&self) -> Result<(), Error> {
-        match self.subcommand.as_deref() {
-            Some("content") => match (&self.feed_title, &self.entry_index) {
-                (Some(_), Some(_)) => self.content(),
-                _ => Err(Error::ArgsNoEntry),
-            },
-            Some("link") => match (&self.feed_title, &self.entry_index) {
-                (Some(_), Some(_)) => self.link_entry(),
-                (Some(_), None) => self.link_feed(),
-                _ => Err(Error::ArgsNoFeed),
-            },
-            Some("list") => match &self.feed_title {
-                Some(string) => if string.starts_with(TAG_PREFIX) {
-                    self.list_tags()
+impl Opml {
+    /// Constructor. Unlike `Feed`, `Opml` struct initialization is a one time cost, and OPML
+    /// is generally relatively short, so this constructor checks the basic validity of the
+    /// underlying XML.
+    pub fn new(text: String) -> Result<Self, Error> {
+        let parser = EventReader::new(text.as_bytes());
+        let maybe_error = parser
+            .into_iter()
+            .find(|event| {
+                if let Err(Error { .. }) = event {
+                    true
                 } else {
-                    self.list_feed()
-                },
-                None => self.list_all(),
-            },
-            Some("update") => self.update(),
-            _ => Err(Error::ArgsBadSubcommand),
+                    false
+                }
+            });
+        match maybe_error {
+            Some(Err(err)) => Err(err),
+            _ => Ok(Self(text)),
         }
     }
 
-    pub fn update(&self) -> Result<(), Error> {
-        let client = Client::new();
-        // We can't use our usual parser_advance() tricks here because we need multiple attributes from the same tag.
-        for e in parser_init(&self.path_opml)? {
-            match e {
-                Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                    if &name.local_name != "outline" { continue; }
-                    let mut title = String::new();
-                    let mut xml_url = String::new();
-                    // get both xml_url and title attributes
-                    for attribute in attributes {
-                        if "xmlUrl" == &attribute.name.local_name[..] {
-                            xml_url = attribute.value.clone();
-                        } else if "text" == &attribute.name.local_name[..] {
-                            title = attribute.value.clone();
-                        }
-                    }
-                    println!("updating {}", title);
-                    // Essentially, get the plain text from this url. Error handling ensues.
-                    let body = match client.get(&xml_url).send() {
-                        Ok(response) => match response.text() {
-                            Ok(string) => string,
-                            Err(_) => {
-                                eprintln!("\terror: empty response from {}", xml_url);
-                                continue;
-                            },
-                        },
-                        Err(_) => {
-                            eprintln!("\terror: request failure for {}", xml_url);
-                            continue;
-                        },
-                    };
-                    fs::write(&format!("{}/{}", self.path_cache, title), body)?;
+    /// Returns an iterator over attribute values for each `<outline>` element whose
+    /// attribute name exactly matches that given. For simple cases such as the `text` or
+    /// `xmlUrl` attributes, other convenience methods are provided.
+    pub fn attribute_values(&self, search_attribute: &'static str) -> impl Iterator<Item = String> + '_ {
+        let parser = EventReader::new(self.0.as_bytes());
+        parser
+            .into_iter()
+            .skip_while(|event| {
+                match event {
+                    Ok(XmlEvent::StartElement { name, .. }) => {
+                        !(name.local_name == "outline")
+                    },
+                    _ => true,
                 }
-                Err(e) => return Err(Error::from(e)),
-                _ => {}
+            })
+            .filter_map(move |event| {
+                match event {
+                    Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                        if name.local_name == "outline" {
+                            for attribute in attributes {
+                                if attribute.name.local_name == search_attribute {
+                                    return Some(attribute.value);
+                                }
+                            }
+                        }
+                        None
+                    },
+                    _ => None,
+                }
+            })
+    }
+
+    pub fn attribute_values_optional(&self, search_attribute: &'static str) -> impl Iterator<Item = Option<String>> + '_ {
+        let parser = EventReader::new(self.0.as_bytes());
+        parser
+            .into_iter()
+            .skip_while(|event| {
+                match event {
+                    Ok(XmlEvent::StartElement { name, .. }) => {
+                        !(name.local_name == "outline")
+                    },
+                    _ => true,
+                }
+            })
+            .filter_map(move |event| {
+                match event {
+                    Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                        if name.local_name == "outline" {
+                            for attribute in attributes {
+                                if attribute.name.local_name == search_attribute {
+                                    return Some(Some(attribute.value));
+                                }
+                            }
+                            return Some(None);
+                        }
+                        None
+                    },
+                    _ => None,
+                }
+            })
+    }
+
+    /// Find the first OPML entry whose "text" attribute is a non-strict superstring of the given
+    /// key; return the full value of that attribute if found.
+    pub fn find(&self, key: &str) -> Option<String> {
+        let titles = self.attribute_values("text");
+        for title in titles {
+            if title.contains(key) {
+                return Some(title);
             }
         }
-        Ok(())
+        None
+    }
+
+    /// Convenience function returning an iterator over optional HTML links given in the OPML.
+    /// These are given as options because OPML 2.0 does not require the "htmlUrl" attribute.
+    pub fn links_html(&self) -> impl Iterator<Item = Option<String>> + '_ {
+        self.attribute_values_optional("htmlUrl")
+    }
+
+    /// Convenience function returning an iterator over XML feed links given in the OPML. The
+    /// "xmlUrl" attribute is required by OPML subscription lists.
+    pub fn links_xml(&self) -> impl Iterator<Item = String> + '_ {
+        self.attribute_values("xmlUrl")
+    }
+
+    /// Convenience function returning an iterator over all tag lists of entries in the
+    /// OPML.
+    pub fn tags(&self) -> impl Iterator<Item = Vec<String>> + '_ {
+        self.attribute_values_optional("category")
+            .into_iter()
+            .map(|tag_opt| {
+                match tag_opt {
+                    Some(tag_string) => {
+                        tag_string
+                            .split(',')
+                            .map(|slice| String::from(slice))
+                            .collect()
+                    },
+                    None => Vec::new(),
+                }
+            })
+    }
+
+    /// Public accessor to this struct's underlying `String`.
+    pub fn text(&self) -> &str { &self.0 }
+
+    /// Convenience function returning an iterator over all titles of entries in the OPML.
+    pub fn titles(&self) -> impl Iterator<Item = String> + '_ {
+        self.attribute_values("text")
     }
 }
 
-#[derive(Debug)]
-pub enum Error {
-    ArgsBadSubcommand,
-    ArgsNoEntry,
-    ArgsNoFeed,
-    BadContent,
-    BadEnclosure,
-    EnvNoHome,
-    Io(io::Error),
-    KeyNoMatch,
-    ParserAttributeAbsent,
-    ParserDateAbsent,
-    Xml(xml::reader::Error),
-    XmlUnexpectedEOF,
+/// A newtype struct to help manipulation of an RSS 2.0 or Atom feeds.
+pub struct Feed(String);
+
+impl Feed {
+    
+    /* SECTION: associated functions */
+
+    /// A simple constructor. It performs no error checking on the XML string supplied to it.
+    pub fn new(text: String) -> Self {
+        Self(text)
+    }
+
+    /// Like `new()`, but checks the supplied XML for errors as designated by `xml-rs`. For
+    /// long feeds, this may noticeably impact performance.
+    pub fn new_check_xml(text: String) -> Result<Self, Error> {
+        let parser = EventReader::new(text.as_bytes());
+        let maybe_error = parser
+            .into_iter()
+            .find(|event| {
+                if let Err(Error { .. }) = event {
+                    true
+                } else {
+                    false
+                }
+            });
+        match maybe_error {
+            Some(Err(err)) => Err(err),
+            _ => Ok(Self(text)),
+        }
+    }
+
+    /* SECTION: methods */
+
+    pub fn contents(&self) -> impl Iterator<Item = String> + '_ {
+        self.element_contents(&KEYS_CONTENT)
+    }
+
+    /// Convenience functions returning an iterator over the dates of all entries in the feed,
+    /// all given in ISO-8601 yyyy-mm-dd format.
+    pub fn dates(&self) -> impl Iterator<Item = String> + '_ {
+        self.element_contents(&KEYS_DATE)
+            .map(|date_string| date_parse(&date_string))
+    }
+
+    /// Returns an iterator over the inner contents of all elements found whose names
+    /// match one of those given in `element_names`. For simple cases such as date or main
+    /// content elements, other convenience methods are provided.
+    fn element_contents<'a>(&'a self, element_names: &'static [&str]) -> impl Iterator<Item = String> + 'a {
+        let parser = EventReader::new(self.0.as_bytes());
+        parser
+            .into_iter()
+            .scan((false, false), move |(awaiting_element, hit_element), event| {
+                match event {
+                    Ok(XmlEvent::StartElement { name, .. }) => {
+                        let name = &name.local_name[..];
+                        if KEYS_ENTRY.contains(&name) {
+                            *awaiting_element = true;
+                        } else if element_names.contains(&name) 
+                            && *awaiting_element {
+                            *hit_element = true;
+                            *awaiting_element = false;
+                        }
+                        Some(None)
+                    },
+                    Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => {
+                        if *hit_element {
+                            *hit_element = false;
+                            Some(Some(string))
+                        } else {
+                            Some(None)
+                        }
+                    },
+                    _ => Some(None),
+                }
+            })
+            .filter_map(|option| match option {
+                Some(string) => Some(string),
+                _ => None,
+            })
+    }
+
+    /// Returns an iterator over all enclosure URL's from this feed.
+    pub fn enclosure_links(&self) -> impl Iterator<Item = String> + '_ {
+        let parser = EventReader::new(self.0.as_bytes());
+        parser
+            .into_iter()
+            .filter_map(|event| {
+                match event {
+                    Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                        if name.local_name == "enclosure" {
+                            attributes
+                                .into_iter()
+                                .find(|attribute| attribute.name.local_name == "url")
+                        } else {
+                            None
+                        }
+                    },
+                    _ => None,
+                }
+            })
+            .map(|attribute| attribute.value)
+    }
+
+    // TODO: figure out why a bunch of links are being skipped (seems correct for atom; not for
+    // rss) (read: ...youtube...npr.)
+    pub fn links(&self) -> impl Iterator<Item = String> + '_ {
+        let parser = EventReader::new(self.0.as_bytes());
+        parser
+            .into_iter()
+            .scan((false, false), move |(awaiting_link, hit_link), event| {
+                match event {
+                    Ok(XmlEvent::StartElement { name, attributes, .. }) => {
+                        if KEYS_ENTRY.contains(&&name.local_name[..]) {
+                            *awaiting_link = true;
+                        } else if name.local_name == "link" && *awaiting_link {
+                            *awaiting_link = false;
+                            let maybe_href_attr = attributes
+                                .into_iter()
+                                .find(|attribute| attribute.name.local_name == "href");
+                            if let Some(href_attr) = maybe_href_attr {
+                                *hit_link = false;
+                                return Some(Some(href_attr.value));
+                            } else {
+                                *hit_link = true;
+                                return Some(None);
+                            }
+                        }
+                        Some(None)
+                    },
+                    Ok(XmlEvent::Characters(string)) | Ok(XmlEvent::CData(string)) => {
+                        if *hit_link {
+                            *hit_link = false;
+                            Some(Some(string))
+                        } else {
+                            Some(None)
+                        }
+                    },
+                    _ => Some(None),
+                }
+            })
+            .filter_map(|option| match option {
+                Some(string) => Some(string),
+                _ => None,
+            })
+    }
+
+    pub fn titles(&self) -> impl Iterator<Item = String> + '_ {
+        self.element_contents(&KEYS_TITLE)
+    }
+
+    /// Public accessor to this struct's underlying `String`.
+    pub fn text(&self) -> &str { &self.0 }
 }
 
-impl From<io::Error> for Error {
-    fn from(e: io::Error) -> Self { Self::Io(e) }
-}
-
-impl From<xml::reader::Error> for Error {
-    fn from(e: xml::reader::Error) -> Self { Self::Xml(e) }
-}
-
+/// Naively but (probably) correctly converts the RFC 822 date format into ISO-8601.
 pub fn date_parse(date: &str) -> String {
     if date.contains(",") {
         let single_digit =
@@ -375,50 +324,187 @@ pub fn date_parse(date: &str) -> String {
             _ => "00",
         };
         if single_digit {
-            format!("{}-0{}", month_number, &date[5..6])
+            format!("{}-{}-0{}", &date[11..15], month_number, &date[5..6])
         } else {
-            format!("{}-{}", month_number, &date[5..7])
+            format!("{}-{}-{}",  &date[12..16], month_number, &date[5..7])
         }
     } else {
-        String::from(&date[5..10])
+        String::from(&date[..10])
     }
 }
 
-pub fn parser_advance(parser: &mut EventReader<BufReader<File>>, tags: &[&str], count: usize, attr: Option<&str>) -> Result<String, Error> {
-    let mut count_current = 0;
-    loop {
-        match parser.next() {
-            Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                // only act on tags specified in `tags`
-                if tags.contains(&&name.local_name[..]) {
-                    count_current += 1;
-                    // if we've hit all of the tags that we wanted to, get the value of an
-                    // attribute if requested
-                    if count_current == count {
-                        match attr {
-                            Some(string) => {
-                                // search for an attribute with the name given in `attr`
-                                for attribute in attributes {
-                                    if &attribute.name.local_name == string {
-                                        return Ok(attribute.value.clone());
-                                    }
-                                }
-                            },
-                            None => return Ok(String::new()),
-                        }
-                        // in this block, we've iterated as much as we wanted to, so...
-                        break;
-                    }
-                }
-            }
-            Ok(XmlEvent::EndDocument) => return Err(Error::XmlUnexpectedEOF),
-            Err(e) => return Err(Error::from(e)),
-            _ => {}
-        }
-    }
-    Err(Error::ParserAttributeAbsent)
-}
+#[cfg(test)]
+mod test {
+    use super::*;
 
-pub fn parser_init(path: &str) -> Result<EventReader<BufReader<File>>, Error> {
-    Ok(EventReader::new(BufReader::new(File::open(path)?)))
+    #[test]
+    fn date_from_iso() {
+        let iso_attempt = date_parse("2003-12-13T18:30:02-05:00");
+        let iso_good    = String::from("2003-12-13");
+        assert_eq!(iso_attempt, iso_good);
+    }
+
+    #[test]
+    fn date_from_rfc_one_digit() {
+        let rfc_attempt = date_parse("Sun, 9 May 2002 15:21:36 GMT");
+        let rfc_good    = String::from("2002-05-09");
+        assert_eq!(rfc_attempt, rfc_good);
+    }
+
+    #[test]
+    fn date_from_rfc_two_digit() {
+        let rfc_attempt = date_parse("Sun, 19 May 2002 15:21:36 GMT");
+        let rfc_good    = String::from("2002-05-19");
+        assert_eq!(rfc_attempt, rfc_good);
+    }
+
+    /* SECTION: OPML */
+
+    static opml: &str = r#"
+        <?xml version="1.0" encoding="utf-8"?> <opml version="2.0">
+            <head />
+            <body>
+                <outline
+                    category="software"
+                    text="archlinux"
+                    type="rss"
+                    htmlUrl="https://archlinux.org"
+                    xmlUrl="https://archlinux.org/feeds/news/"
+                />
+                <outline
+                    category="audio,software"
+                    text="buildingwithrust"
+                    type="rss"
+                    htmlUrl="https://seanchen1991.github.io"
+                    xmlUrl="https://anchor.fm/s/4928bbdc/podcast/rss"
+                />
+                <outline
+                    category="video,leisure,education"
+                    text="kurzgesagt"
+                    type="rss"
+                    htmlUrl="https://www.youtube.com/channel/UCsXVk37bltHxD1rDPwtNM8Q"
+                    xmlUrl="https://www.youtube.com/feeds/videos.xml?channel_id=UCsXVk37bltHxD1rDPwtNM8Q"
+                />
+                <outline
+                    category="software"
+                    text="neovim"
+                    type="rss"
+                    htmlUrl="https://neovim.io"
+                    xmlUrl="https://neovim.io/news.xml"
+                />
+                <outline
+                    category="news"
+                    text="npr"
+                    type="rss"
+                    htmlUrl="https://www.npr.org/"
+                    xmlUrl="https://feeds.npr.org/1001/rss.xml"
+                />
+                <outline
+                    text="nprupfirst"
+                    type="rss"
+                    htmlUrl="https://www.npr.org/podcasts/510318/up-first"
+                    xmlUrl="https://feeds.npr.org/510318/podcast.xml"
+                />
+                <outline
+                    category="news"
+                    text="propublica"
+                    type="rss"
+                    htmlUrl="https://www.propublica.org/"
+                    xmlUrl="http://feeds.propublica.org/propublica/main"
+                />
+                <outline
+                    category="news,software"
+                    text="slashdot"
+                    type="rss"
+                    htmlUrl="https://slashdot.org/"
+                    xmlUrl="http://rss.slashdot.org/Slashdot/slashdotMain"
+                />
+                <outline
+                    category="blog"
+                    text="tykozic.net"
+                    type="rss"
+                    htmlUrl="http://tykozic.net/"
+                    xmlUrl="http://tykozic.net/atom.xml"
+                />
+            </body>
+        </opml>
+    "#;
+
+    #[test]
+    fn opml_attribute_values() {
+        let opml_struct = Opml::new(opml.to_string()).unwrap();
+        let actual: Vec<String> = opml_struct
+            .attribute_values("text")
+            .collect();
+        let expected = vec![
+            String::from("archlinux"),
+            String::from("buildingwithrust"),
+            String::from("kurzgesagt"),
+            String::from("neovim"),
+            String::from("npr"),
+            String::from("nprupfirst"),
+            String::from("propublica"),
+            String::from("slashdot"),
+            String::from("tykozic.net"),
+        ];
+        assert_eq!(actual, expected);
+    }
+
+    /* SECTION: Feed */
+
+    static atom: &str = r#"
+        <?xml version="1.0" encoding="utf-8"?>
+        <feed xmlns="http://www.w3.org/2005/Atom">
+
+            <title>Example Feed</title>
+            <link href="http://example.org/"/>
+            <updated>2003-12-13T18:30:02Z</updated>
+            <author>
+                <name>John Doe</name>
+            </author>
+            <id>urn:uuid:60a76c80-d399-11d9-b93C-0003939e0af6</id>
+
+            <entry>
+                <title>Atom-Powered Robots Run Amok</title>
+                <link href="http://example.org/2003/12/13/atom03"/>
+                <id>urn:uuid:1225c695-cfb8-4ebb-aaaa-80da344efa6a</id>
+                <updated>2003-12-13T18:30:02Z</updated>
+                <summary>Some text.</summary>
+            </entry>
+
+            <entry>
+                <title>Ty's homegrown sample entry</title>
+                <link href="http://tykozic.net" />
+                <id>http://tykozic.net/posts/rss-part-1</id>
+                <updated>2021-08-06T15:32:35-05:00</updated>
+                <summary>yee</summary>
+            </entry>
+        
+        </feed>
+    "#;
+
+    // TODO
+    /*
+    #[test]
+    fn rss_element_contents() {
+        let feed = Feed::new(rss.to_string()).unwrap();
+        let actual = feed.element_contents(&KEYS_DATE);
+        let expected = vec![
+        ];
+        assert_eq!(actual, expected);
+    }
+    */
+
+    #[test]
+    fn atom_element_contents() {
+        let feed = Feed::new(atom.to_string()).unwrap();
+        let actual: Vec<String> = feed
+            .element_contents(&KEYS_DATE)
+            .collect();
+        let expected = vec![
+            String::from("2003-12-13T18:30:02Z"),
+            String::from("2021-08-06T15:32:35-05:00"),
+        ];
+        assert_eq!(actual, expected);
+    }
 }
