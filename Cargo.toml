@@ -3,6 +3,7 @@ name = "koifeed"
 version = "1.0.0"
 authors = ["Ty Kozic <tykozic@posteo.net>"]
 edition = "2018"
+license = "MIT"
 
 [profile.release]
 opt-level = "s"
