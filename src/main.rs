@@ -102,10 +102,10 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let feed = init_feed_by_title(&path_feed_dir, &title)?;
                     let dates = feed.dates();
                     let titles = feed.titles();
-                    //        yyyy-mm-dd
-                    println!("DATE      \tTITLE");
-                    for (date, title) in dates.zip(titles) {
-                        println!("{}\t{}", date, title);
+                    //               yyyy-mm-dd
+                    println!("INDEX\tDATE      \tTITLE");
+                    for (index, (date, title)) in dates.zip(titles).enumerate() {
+                        println!("{}\t{}\t{}", index, date, title);
                     }
                 },
                 (None, true) => {
@@ -129,11 +129,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 if arguments.is_present("long") {
                                     println!("feed: {}", title);
                                     println!("-----");
-                                    //        yyyy-mm-dd
-                                    println!("DATE      \tTITLE");
+                                    //               yyyy-mm-dd
+                                    println!("INDEX\tDATE      \tTITLE");
                                     let entry_titles = feed.titles();
-                                    for (date, entry_title) in dates.zip(entry_titles) {
-                                        println!("{}\t{}", date, entry_title);
+                                    for (index, (date, entry_title)) in dates.zip(entry_titles).enumerate() {
+                                        println!("{}\t{}\t{}", index, date, entry_title);
                                     }
                                     println!();
                                 } else {
