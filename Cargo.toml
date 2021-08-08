@@ -7,6 +7,10 @@ edition = "2018"
 [profile.release]
 opt-level = "s"
 
+[[bin]]
+path = "src/main.rs"
+name = "koi"
+
 [dependencies]
 clap = "2.33.3"
 reqwest = { version = "0.11.2", features = ["blocking"] }
