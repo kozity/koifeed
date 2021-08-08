@@ -4,6 +4,12 @@ version = "1.0.0"
 authors = ["Ty Kozic <tykozic@posteo.net>"]
 edition = "2018"
 license = "MIT"
+description = "An RSS/Atom CLI in Rust focused on composability."
+homepage = "https://github.com/kozity/koifeed"
+repository = "https://github.com/kozity/koifeed"
+keywords = ["rss", "atom"]
+categories = ["command-line-utilities"]
+readme = "README.md"
 
 [profile.release]
 opt-level = "s"
