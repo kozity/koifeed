@@ -21,13 +21,7 @@ impl Opml {
         let parser = EventReader::new(text.as_bytes());
         let maybe_error = parser
             .into_iter()
-            .find(|event| {
-                if let Err(Error { .. }) = event {
-                    true
-                } else {
-                    false
-                }
-            });
+            .find(|event| matches!(event, Err(Error { .. })));
         match maybe_error {
             Some(Err(err)) => Err(err),
             _ => Ok(Self(text)),
@@ -44,7 +38,7 @@ impl Opml {
             .skip_while(|event| {
                 match event {
                     Ok(XmlEvent::StartElement { name, .. }) => {
-                        !(name.local_name == "outline")
+                        name.local_name != "outline"
                     },
                     _ => true,
                 }
@@ -76,7 +70,7 @@ impl Opml {
             .skip_while(|event| {
                 match event {
                     Ok(XmlEvent::StartElement { name, .. }) => {
-                        !(name.local_name == "outline")
+                        name.local_name != "outline"
                     },
                     _ => true,
                 }
@@ -133,7 +127,7 @@ impl Opml {
                     Some(tag_string) => {
                         tag_string
                             .split(',')
-                            .map(|slice| String::from(slice))
+                            .map(String::from)
                             .collect()
                     },
                     None => Vec::new(),
@@ -168,13 +162,7 @@ impl Feed {
         let parser = EventReader::new(text.as_bytes());
         let maybe_error = parser
             .into_iter()
-            .find(|event| {
-                if let Err(Error { .. }) = event {
-                    true
-                } else {
-                    false
-                }
-            });
+            .find(|event| matches!(event, Err(Error { .. })));
         match maybe_error {
             Some(Err(err)) => Err(err),
             _ => Ok(Self(text)),
@@ -309,13 +297,8 @@ impl Feed {
 
 /// Naively but (probably) correctly converts the RFC 822 date format into ISO-8601.
 pub fn date_parse(date: &str) -> String {
-    if date.contains(",") {
-        let single_digit =
-            if &date[6..7] == " " {
-                true
-            } else {
-                false
-            };
+    if date.contains(',') {
+        let single_digit = &date[6..7] == " ";
         let month =
             if single_digit {
                 &date[7..10]

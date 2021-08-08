@@ -48,7 +48,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                  .long("tags")
                  .conflicts_with("feed")
                  .value_delimiter(",")))
-        .subcommand(SubCommand::with_name("debug"))
         .get_matches();
 
     let path_home = env::var("HOME").expect("HOME environment variable inaccessible");
@@ -76,7 +75,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let feed = init_feed_by_title(&path_feed_dir, &title)?;
                     let index = index_string.parse::<usize>().expect("entry must be specified as a nonnegative integer");
                     let mut enclosures = feed.enclosure_links().peekable();
-                    let link = if let None = enclosures.peek() {
+                    let link = if enclosures.peek().is_none() {
                         feed.links().nth(index).expect("entry index out of bounds")
                     } else {
                         enclosures.nth(index).expect("entry index out of bounds")
@@ -139,7 +138,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     println!();
                                 } else {
                                     let feed = init_feed_by_title(&path_feed_dir, &title)?;
-                                    let date = feed.dates().nth(0).expect("no entries found");
+                                    let date = feed.dates().next().expect("no entries found");
                                     println!("{}\t{}", date, title);
                                     break;
                                 }
@@ -155,7 +154,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         let feed = init_feed_by_title(&path_feed_dir, &title)?;
                         let date = feed
                             .dates()
-                            .nth(0)
+                            .next()
                             .expect("no entries found");
                         println!("{}\t{}", date, title);
                     }
@@ -248,13 +247,6 @@ fn main() -> Result<(), Box<dyn Error>> {
                     }
                 },
                 _ => {}, // all other cases have already been handled by clap-rs.
-            }
-        },
-        ("debug", _) => {
-            let title = "npr";
-            let feed = init_feed_by_title(&path_feed_dir, title)?;
-            for link in feed.links() {
-                println!("DEBUG: {}", link);
             }
         },
         _ => {}, // should never be hit
