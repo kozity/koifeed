@@ -182,7 +182,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                     let links_xml = opml.links_xml();
                     for (title, link_xml) in titles.zip(links_xml) {
                         if title == search_title {
-                            let body = match client.get(&link_xml).send() {
+                            match client.get(&link_xml).send() {
                                 Ok(response) => match response.text() {
                                     Ok(string) => {
                                         fs::write(format!("{}/{}", path_feed_dir, title), string)?;
@@ -194,7 +194,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                 Err(_) => {
                                     eprintln!("error: request failure for {}", link_xml);
                                 },
-                            };
+                            }
                             break;
                         }
                     }
@@ -208,7 +208,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                         for tag in tags {
                             if given_tags.contains(&&tag[..]) {
                                 eprintln!("updating {}", title);
-                                let body = match client.get(&link_xml).send() {
+                                match client.get(&link_xml).send() {
                                     Ok(response) => match response.text() {
                                         Ok(string) => {
                                             fs::write(format!("{}/{}", path_feed_dir, title), string)?;
@@ -220,7 +220,7 @@ fn main() -> Result<(), Box<dyn Error>> {
                                     Err(_) => {
                                         eprintln!("error: request failure for {}", link_xml);
                                     },
-                                };
+                                }
                                 break;
                             }
                         }

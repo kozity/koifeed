@@ -66,6 +66,9 @@ impl Opml {
             })
     }
 
+    /// Returns an iterator over attribute values for each `<outline>` element whose
+    /// attribute name exactly matches that given. This works for optional attributes by leaving a
+    /// `None` element in the returned iterator.
     pub fn attribute_values_optional(&self, search_attribute: &'static str) -> impl Iterator<Item = Option<String>> + '_ {
         let parser = EventReader::new(self.0.as_bytes());
         parser
@@ -180,11 +183,13 @@ impl Feed {
 
     /* SECTION: methods */
 
+    /// Convenience function returning an iterator over the main contents/descriptions of all
+    /// entries in the feed.
     pub fn contents(&self) -> impl Iterator<Item = String> + '_ {
         self.element_contents(&KEYS_CONTENT)
     }
 
-    /// Convenience functions returning an iterator over the dates of all entries in the feed,
+    /// Convenience function returning an iterator over the dates of all entries in the feed,
     /// all given in ISO-8601 yyyy-mm-dd format.
     pub fn dates(&self) -> impl Iterator<Item = String> + '_ {
         self.element_contents(&KEYS_DATE)
@@ -250,8 +255,8 @@ impl Feed {
             .map(|attribute| attribute.value)
     }
 
-    // TODO: figure out why a bunch of links are being skipped (seems correct for atom; not for
-    // rss) (read: ...youtube...npr.)
+    /// Convenience function returning an iterator over all entry links from the feed. Note that
+    /// this method ignores enclosures.
     pub fn links(&self) -> impl Iterator<Item = String> + '_ {
         let parser = EventReader::new(self.0.as_bytes());
         parser
@@ -293,6 +298,7 @@ impl Feed {
             })
     }
 
+    /// Convenience function returning an iterator of all entry titles in the feed.
     pub fn titles(&self) -> impl Iterator<Item = String> + '_ {
         self.element_contents(&KEYS_TITLE)
     }
