@@ -1,4 +1,4 @@
-use clap::{Arg, App, SubCommand};
+use clap::{Arg, App, AppSettings, SubCommand};
 use koifeed::{Feed, Opml};
 use reqwest::blocking::Client;
 use std::env;
@@ -8,6 +8,7 @@ use std::fs;
 fn main() -> Result<(), Box<dyn Error>> {
     let arguments = App::new("koifeed")
         .about("Composable CLI for RSS/Atom feeds, written in Rust")
+        .setting(AppSettings::SubcommandRequired)
         .subcommand(SubCommand::with_name("content")
             .about("Get the main content of an entry")
             .arg(Arg::with_name("feed")
